@@ -291,12 +291,10 @@ export default function App() {
       id: `bill-${Date.now()}`,
       name: newBillName.trim(),
       amount: amt,
-      category: newBillCategory,
+      category: 'online',
       paid: false,
-      note:
-        newBillNote.trim() ||
-        (newBillCategory === 'online' ? 'Paiement Dahabia' : 'Charge Offline'),
-      icon: newBillCategory === 'online' ? 'CreditCard' : 'Banknote',
+      note: newBillNote.trim() || 'Charge Fixe',
+      icon: 'CreditCard',
     };
 
     setCurrentCycle((prev) => ({
@@ -386,9 +384,8 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  const onlineBills = currentCycle.bills.filter((b) => b.category === 'online');
-  const offlineDebts = currentCycle.bills.filter((b) => b.category === 'offline_debt');
-  const onlineProgressPct =
+  const fixedBills = currentCycle.bills;
+  const fixedProgressPct =
     metrics.totalOnline > 0
       ? Math.min(100, Math.round((metrics.paidOnline / metrics.totalOnline) * 100))
       : 0;
@@ -495,6 +492,52 @@ export default function App() {
                   <strong>{formatDA(metrics.dailyBudget, 2)}</strong> (Budget/30J) − Dépense J
                   {selectedDay.dayIndex} (<strong>{formatDA(selectedDay.spent, 0)}</strong>)
                 </span>
+              </div>
+
+              {/* Food & House (Calculé auto) — Affiché uniquement sur la première page */}
+              <div
+                style={{
+                  background: 'rgba(16, 185, 129, 0.08)',
+                  border: '1px solid rgba(16, 185, 129, 0.22)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '9px 12px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 10,
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: '0.68rem',
+                      color: '#10B981',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    Food & House (Calculé auto)
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                    Salaire − Charges Fixes (30J)
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontWeight: 700,
+                      color: '#10B981',
+                      fontSize: '0.95rem',
+                    }}
+                  >
+                    {formatDA(metrics.foodAndHouseBudget, 0)}
+                  </div>
+                  <div style={{ fontSize: '0.70rem', color: 'var(--text-muted)' }}>
+                    soit {formatDA(metrics.dailyBudget, 0)} / jour
+                  </div>
+                </div>
               </div>
 
               <div className="vault-metrics-grid">
@@ -952,14 +995,6 @@ export default function App() {
                   />
                   <button
                     type="button"
-                    className="btn-secondary"
-                    onClick={() => setSalaryInput('79881.79')}
-                    title="Montant exact de la feuille Salaire (Net à payer)"
-                  >
-                    Fiche Paie (79 881,79)
-                  </button>
-                  <button
-                    type="button"
                     className="btn-primary"
                     onClick={handleSaveSalary}
                   >
@@ -971,7 +1006,7 @@ export default function App() {
               <div className="waterfall-formula-box">
                 <div className="formula-line">
                   <span style={{ color: 'var(--text-secondary)' }}>
-                    Salaire Youyou (B3)
+                    Salaire
                   </span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
                     {formatDA(metrics.salary)}
@@ -979,7 +1014,7 @@ export default function App() {
                 </div>
                 <div className="formula-line">
                   <span style={{ color: 'var(--text-secondary)' }}>
-                    − Total Dahabia / Online (C12)
+                    − Charges Fixes ({fixedBills.length})
                   </span>
                   <span
                     style={{
@@ -990,65 +1025,35 @@ export default function App() {
                     − {formatDA(metrics.totalOnline)}
                   </span>
                 </div>
-                <div className="formula-line">
-                  <span style={{ color: 'var(--text-secondary)' }}>
-                    − Dettes Offline RTA + CAR (C15:C16)
-                  </span>
-                  <span
-                    style={{
-                      fontFamily: 'var(--font-mono)',
-                      color: 'var(--coral)',
-                    }}
-                  >
-                    − {formatDA(metrics.totalOfflineDebt)}
-                  </span>
-                </div>
                 <div className="formula-line total">
-                  <span>= Budget Food & House (30 Jours)</span>
-                  <span style={{ fontFamily: 'var(--font-mono)' }}>
-                    {formatDA(metrics.foodAndHouseBudget)}
+                  <span>Payé sur charges fixes</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--emerald)' }}>
+                    {formatDA(metrics.paidOnline)}
                   </span>
-                </div>
-                <div
-                  style={{
-                    fontSize: '0.73rem',
-                    color: 'var(--text-secondary)',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    paddingTop: 2,
-                  }}
-                >
-                  <span>Budget quotidien (Food & House ÷ 30) :</span>
-                  <strong style={{ fontFamily: 'var(--font-mono)', color: '#F5B841' }}>
-                    {formatDA(metrics.dailyBudget, 2)} / jour
-                  </strong>
                 </div>
               </div>
             </section>
 
-            {/* Online / Dahabia Bills */}
+            {/* Charges Fixes (Section unique conservée) */}
             <section className="section-card">
               <div className="section-header">
                 <div>
                   <div className="section-title">
                     <CreditCard size={17} color="#F5B841" />
-                    Factures Online (Carte Edahabia)
+                    Charges Fixes
                   </div>
                   <div style={{ fontSize: '0.73rem', color: 'var(--text-secondary)', marginTop: 2 }}>
                     Payé : {formatDA(metrics.paidOnline, 0)} / {formatDA(metrics.totalOnline, 0)} (
-                    {onlineProgressPct}%)
+                    {fixedProgressPct}%)
                   </div>
                 </div>
                 <button
                   type="button"
                   className="btn-primary"
                   style={{ padding: '7px 11px', fontSize: '0.78rem' }}
-                  onClick={() => {
-                    setNewBillCategory('online');
-                    setShowAddBillModal(true);
-                  }}
+                  onClick={() => setShowAddBillModal(true)}
                 >
-                  <Plus size={14} /> Facture
+                  <Plus size={14} /> Charge Fixe
                 </button>
               </div>
 
@@ -1056,14 +1061,14 @@ export default function App() {
                 <div
                   className="progress-fill"
                   style={{
-                    width: `${onlineProgressPct}%`,
+                    width: `${fixedProgressPct}%`,
                     background: 'linear-gradient(90deg, #F5B841, #10B981)',
                   }}
                 />
               </div>
 
               <div className="bill-list">
-                {onlineBills.map((bill) => (
+                {fixedBills.map((bill) => (
                   <div
                     key={bill.id}
                     className={`bill-item ${bill.paid ? 'paid' : ''}`}
@@ -1084,7 +1089,7 @@ export default function App() {
                       <div className="bill-info">
                         <div className="bill-name">{bill.name}</div>
                         <div className="bill-note">
-                          {bill.paid ? '✓ Payé via Dahabia' : bill.note || 'En attente de paiement'}
+                          {bill.paid ? '✓ Réglé' : bill.note || 'En attente de règlement'}
                         </div>
                       </div>
                     </div>
@@ -1109,128 +1114,7 @@ export default function App() {
                           cursor: 'pointer',
                           padding: 4,
                         }}
-                        title="Supprimer cette facture"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            {/* Offline Debts & Cash Envelope */}
-            <section className="section-card">
-              <div className="section-header">
-                <div>
-                  <div className="section-title">
-                    <Banknote size={17} color="#10B981" />
-                    Charges & Dettes Offline (Cash)
-                  </div>
-                  <div style={{ fontSize: '0.73rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                    Total Offline : {formatDA(metrics.totalOffline)}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  style={{ padding: '7px 11px', fontSize: '0.78rem' }}
-                  onClick={() => {
-                    setNewBillCategory('offline_debt');
-                    setShowAddBillModal(true);
-                  }}
-                >
-                  <Plus size={14} /> Dette/Charge
-                </button>
-              </div>
-
-              <div className="bill-list">
-                {/* Auto-calculated Food & House row */}
-                <div
-                  className="bill-item"
-                  style={{
-                    borderColor: 'rgba(16, 185, 129, 0.4)',
-                    background: 'rgba(16, 185, 129, 0.08)',
-                  }}
-                >
-                  <div className="bill-left">
-                    <div
-                      style={{
-                        width: 26,
-                        height: 26,
-                        borderRadius: 7,
-                        background: 'var(--emerald-soft)',
-                        color: 'var(--emerald)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 700,
-                        fontSize: '0.75rem',
-                      }}
-                    >
-                      30J
-                    </div>
-                    <div className="bill-info">
-                      <div className="bill-name" style={{ color: '#10B981' }}>
-                        food & house (Budget 30 jours)
-                      </div>
-                      <div className="bill-note">
-                        Calculé auto : {formatDA(metrics.dailyBudget)} / jour pendant 30j
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bill-right">
-                    <span className="bill-amount" style={{ color: '#10B981' }}>
-                      {formatDA(metrics.foodAndHouseBudget)}
-                    </span>
-                  </div>
-                </div>
-
-                {offlineDebts.map((debt) => (
-                  <div
-                    key={debt.id}
-                    className={`bill-item ${debt.paid ? 'paid' : ''}`}
-                    onClick={() => toggleBillPaid(debt.id)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <div className="bill-left">
-                      <button
-                        type="button"
-                        className="check-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleBillPaid(debt.id);
-                        }}
-                      >
-                        <Check size={15} strokeWidth={3} />
-                      </button>
-                      <div className="bill-info">
-                        <div className="bill-name">{debt.name}</div>
-                        <div className="bill-note">
-                          {debt.paid ? '✓ Mensualité réglée' : debt.note || 'Mensualité dette'}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="bill-right">
-                      <span
-                        className="bill-amount"
-                        style={{ color: debt.paid ? 'var(--emerald)' : 'var(--text-primary)' }}
-                      >
-                        {formatDA(debt.amount)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteBill(debt.id);
-                        }}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--text-muted)',
-                          cursor: 'pointer',
-                          padding: 4,
-                        }}
+                        title="Supprimer cette charge"
                       >
                         <Trash2 size={14} />
                       </button>
@@ -1384,9 +1268,8 @@ export default function App() {
                 <div className="section-title">Répartition du Salaire ({formatDA(metrics.salary, 0)})</div>
               </div>
               {(() => {
-                const pOnline = Math.round((metrics.totalOnline / metrics.salary) * 100);
-                const pDebt = Math.round((metrics.totalOfflineDebt / metrics.salary) * 100);
-                const pFood = Math.max(0, 100 - pOnline - pDebt);
+                const pFixed = Math.min(100, Math.round((metrics.totalOnline / metrics.salary) * 100));
+                const pFood = Math.max(0, 100 - pFixed);
                 return (
                   <>
                     <div
@@ -1399,28 +1282,23 @@ export default function App() {
                         marginBottom: 12,
                       }}
                     >
-                      <div style={{ width: `${pOnline}%`, background: '#F5B841' }} />
-                      <div style={{ width: `${pDebt}%`, background: '#F43F5E' }} />
+                      <div style={{ width: `${pFixed}%`, background: '#F5B841' }} />
                       <div style={{ width: `${pFood}%`, background: '#10B981' }} />
                     </div>
                     <div
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: 'repeat(3, 1fr)',
+                        gridTemplateColumns: 'repeat(2, 1fr)',
                         gap: 8,
                         fontSize: '0.75rem',
                       }}
                     >
                       <div className="vault-mini-stat">
-                        <div style={{ color: '#F5B841', fontWeight: 700 }}>Dahabia ({pOnline}%)</div>
+                        <div style={{ color: '#F5B841', fontWeight: 700 }}>Charges Fixes ({pFixed}%)</div>
                         <div className="vault-mini-val">{formatDA(metrics.totalOnline, 0)}</div>
                       </div>
                       <div className="vault-mini-stat">
-                        <div style={{ color: '#F43F5E', fontWeight: 700 }}>Dettes ({pDebt}%)</div>
-                        <div className="vault-mini-val">{formatDA(metrics.totalOfflineDebt, 0)}</div>
-                      </div>
-                      <div className="vault-mini-stat">
-                        <div style={{ color: '#10B981', fontWeight: 700 }}>Maison ({pFood}%)</div>
+                        <div style={{ color: '#10B981', fontWeight: 700 }}>Budget Quotidien ({pFood}%)</div>
                         <div className="vault-mini-val">{formatDA(metrics.foodAndHouseBudget, 0)}</div>
                       </div>
                     </div>
@@ -1620,8 +1498,8 @@ export default function App() {
                 <div>• Durée du cycle : <strong>30 jours</strong></div>
                 <div>• Budget journalier : <strong>{formatDA(metrics.dailyBudget, 2)} / jr</strong> (40 000 DA ÷ 30)</div>
                 <div>• Salaire configuré : <strong>{formatDA(metrics.salary, 0)}</strong></div>
-                <div>• 6 Factures Online (Dahabia) : <strong>{formatDA(metrics.totalOnline, 0)}</strong></div>
-                <div>• 2 Dettes Offline (RTA + CAR) : <strong>{formatDA(metrics.totalOfflineDebt, 0)}</strong></div>
+                <div>• Charges Fixes ({fixedBills.length}) : <strong>{formatDA(metrics.totalOnline, 0)}</strong></div>
+                <div>• Budget Food & House (30J) : <strong>{formatDA(metrics.foodAndHouseBudget, 0)}</strong></div>
                 <div>• Sélection du jour : <strong>Automatique sur Aujourd'hui</strong> + <strong>Manuelle</strong></div>
               </div>
             </section>
@@ -1639,34 +1517,13 @@ export default function App() {
           >
             <div className="section-title">
               <Plus size={18} color="#F5B841" />
-              Ajouter une Facture ou Dette
-            </div>
-
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                type="button"
-                className={newBillCategory === 'online' ? 'btn-primary' : 'btn-secondary'}
-                style={{ flex: 1, justifyContent: 'center' }}
-                onClick={() => setNewBillCategory('online')}
-              >
-                Online (Dahabia)
-              </button>
-              <button
-                type="button"
-                className={
-                  newBillCategory === 'offline_debt' ? 'btn-primary' : 'btn-secondary'
-                }
-                style={{ flex: 1, justifyContent: 'center' }}
-                onClick={() => setNewBillCategory('offline_debt')}
-              >
-                Dette Offline
-              </button>
+              Ajouter une Charge Fixe
             </div>
 
             <input
               type="text"
               className="input-field"
-              placeholder="Nom (ex: Assurance auto, Netflix...)"
+              placeholder="Nom (ex: Assurance, Netflix, Abonnement...)"
               value={newBillName}
               onChange={(e) => setNewBillName(e.target.value)}
               required
@@ -1785,7 +1642,7 @@ export default function App() {
           onClick={() => setActiveTab('bills')}
         >
           <Receipt size={20} />
-          <span>Factures</span>
+          <span>Charges Fixes</span>
         </button>
 
         <button

@@ -150,21 +150,21 @@ export const INITIAL_BILLS: BillItem[] = [
     note: 'Épargne entretien périodique (Kia KX1)',
     icon: 'Wrench',
   },
-  // Offline (Dettes fixes déduites avant Food & House)
+  // Charges Fixes (incluant Dettes RTA & Véhicule)
   {
     id: 'debt-rta',
     name: 'RTA DEBT',
     amount: 14166.67,
-    category: 'offline_debt',
+    category: 'online',
     paid: false,
-    note: 'Formule Sheet: 170 000 / 12 mois',
+    note: 'Mensualité RTA (170 000 / 12)',
     icon: 'Landmark',
   },
   {
     id: 'debt-car',
     name: 'CAR DEBT',
     amount: 5583.33,
-    category: 'offline_debt',
+    category: 'online',
     paid: false,
     note: 'Mensualité crédit véhicule',
     icon: 'Car',
@@ -240,22 +240,13 @@ export interface ComputedCycleMetrics {
 }
 
 export function computeCycleMetrics(cycle: BudgetCycle): ComputedCycleMetrics {
-  const onlineBills = cycle.bills.filter((b) => b.category === 'online');
-  const offlineDebts = cycle.bills.filter((b) => b.category === 'offline_debt');
+  // Toutes les factures et dettes sont désormais des Charges Fixes
+  const totalFixed = cycle.bills.reduce((acc, b) => acc + b.amount, 0);
+  const paidFixed = cycle.bills.filter((b) => b.paid).reduce((acc, b) => acc + b.amount, 0);
 
-  const totalOnline = onlineBills.reduce((acc, b) => acc + b.amount, 0);
-  const paidOnline = onlineBills.filter((b) => b.paid).reduce((acc, b) => acc + b.amount, 0);
-
-  const totalOfflineDebt = offlineDebts.reduce((acc, b) => acc + b.amount, 0);
-  const paidOfflineDebt = offlineDebts
-    .filter((b) => b.paid)
-    .reduce((acc, b) => acc + b.amount, 0);
-
-  // Exact Google Sheet formula in C14: =(B3-C12)-SUM(C15:C16)
-  const foodAndHouseBudget = Math.max(0, cycle.salary - totalOnline - totalOfflineDebt);
-  // Exact Google Sheet formula in C17: =SUM(C14:C16)
-  const totalOffline = foodAndHouseBudget + totalOfflineDebt;
-  // Daily budget: = C$14 / cycleDays (30 jours)
+  // Budget Food & House calculé automatiquement : Salaire - Total Charges Fixes
+  const foodAndHouseBudget = Math.max(0, cycle.salary - totalFixed);
+  // Budget quotidien : Food & House ÷ 30 jours
   const daysCount = cycle.cycleDays > 0 ? cycle.cycleDays : 30;
   const dailyBudget = foodAndHouseBudget / daysCount;
 
@@ -278,12 +269,12 @@ export function computeCycleMetrics(cycle: BudgetCycle): ComputedCycleMetrics {
 
   return {
     salary: cycle.salary,
-    totalOnline,
-    paidOnline,
-    totalOfflineDebt,
-    paidOfflineDebt,
+    totalOnline: totalFixed,
+    paidOnline: paidFixed,
+    totalOfflineDebt: 0,
+    paidOfflineDebt: 0,
     foodAndHouseBudget,
-    totalOffline,
+    totalOffline: totalFixed,
     dailyBudget,
     totalSpentDaily,
     remainingFoodAndHouse: foodAndHouseBudget - totalSpentDaily,
