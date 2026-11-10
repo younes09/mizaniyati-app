@@ -1,0 +1,8 @@
+{
+  "appId": "dz.youyou.mizaniyati",
+  "appName": "Mizaniyati",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}

@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.DS_Store
+Thumbs.db
+*.local
+.env
+.env.*
+!.env.example
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/captures/
+android/local.properties
+*.apk
+*.aab
