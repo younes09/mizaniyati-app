@@ -1,3 +1,21 @@
+export interface BudgetAdjustment {
+  id: string;
+  type: 'add' | 'subtract';
+  amount: number;
+  dateISO: string;
+  note: string;
+  createdAt: string;
+}
+
+export interface BudgetItem {
+  id: string;
+  name: string;
+  initialAmount: number;
+  color: string;
+  icon: string;
+  adjustments: BudgetAdjustment[];
+}
+
 export interface BillItem {
   id: string;
   name: string;
@@ -7,6 +25,7 @@ export interface BillItem {
   paidDate?: string;
   note?: string;
   icon: string;
+  budgetId?: string; // Budget auquel cette charge fixe est affectée
 }
 
 export interface DailyExpenseEntry {
@@ -14,6 +33,7 @@ export interface DailyExpenseEntry {
   label: string;
   amount: number;
   time: string;
+  budgetId?: string; // Budget auquel cette dépense est imputée
 }
 
 export interface DayRecord {
@@ -34,6 +54,7 @@ export interface BudgetCycle {
   salary: number; // 79800
   bills: BillItem[];
   days: DayRecord[];
+  budgets?: BudgetItem[];
   archivedAt?: string;
 }
 
@@ -94,6 +115,41 @@ export const DEFAULT_PRESET_LABELS: string[] = [
   'Imprévu / Divers',
 ];
 
+export const DEFAULT_BUDGETS: BudgetItem[] = [
+  {
+    id: 'budget-food',
+    name: 'Alimentation & Courses',
+    initialAmount: 40000,
+    color: '#10B981',
+    icon: 'Utensils',
+    adjustments: [],
+  },
+  {
+    id: 'budget-charges',
+    name: 'Logement & Charges',
+    initialAmount: 10000,
+    color: '#3B82F6',
+    icon: 'Home',
+    adjustments: [],
+  },
+  {
+    id: 'budget-transport',
+    name: 'Transport & Auto',
+    initialAmount: 20000,
+    color: '#F5B841',
+    icon: 'Car',
+    adjustments: [],
+  },
+  {
+    id: 'budget-divers',
+    name: 'Loisirs & Dépenses Perso',
+    initialAmount: 9800,
+    color: '#8B5CF6',
+    icon: 'Sparkles',
+    adjustments: [],
+  },
+];
+
 export const INITIAL_BILLS: BillItem[] = [
   // Online (Dahabia)
   {
@@ -104,6 +160,7 @@ export const INITIAL_BILLS: BillItem[] = [
     paid: true,
     note: 'Idoom Fibre / 4G',
     icon: 'Wifi',
+    budgetId: 'budget-charges',
   },
   {
     id: 'bill-flixi',
@@ -113,6 +170,7 @@ export const INITIAL_BILLS: BillItem[] = [
     paid: true,
     note: 'Forfait mobile mensuel',
     icon: 'Smartphone',
+    budgetId: 'budget-charges',
   },
   {
     id: 'bill-sonelgaz-seaal',
@@ -122,6 +180,7 @@ export const INITIAL_BILLS: BillItem[] = [
     paid: false,
     note: 'Provision mensuelle Sonelgaz / SEAAL',
     icon: 'Zap',
+    budgetId: 'budget-charges',
   },
   {
     id: 'bill-aadl',
@@ -131,6 +190,7 @@ export const INITIAL_BILLS: BillItem[] = [
     paid: false,
     note: 'Mensualité & charges Gest-Immo AADL',
     icon: 'Building2',
+    budgetId: 'budget-charges',
   },
   {
     id: 'bill-essence',
@@ -140,6 +200,7 @@ export const INITIAL_BILLS: BillItem[] = [
     paid: false,
     note: 'Carburant mensuel (Naftal / Carte)',
     icon: 'Fuel',
+    budgetId: 'budget-transport',
   },
   {
     id: 'bill-maint-auto',
@@ -149,6 +210,7 @@ export const INITIAL_BILLS: BillItem[] = [
     paid: false,
     note: 'Épargne entretien périodique (Kia KX1)',
     icon: 'Wrench',
+    budgetId: 'budget-transport',
   },
   // Charges Fixes (incluant Dettes RTA & Véhicule)
   {
@@ -159,6 +221,7 @@ export const INITIAL_BILLS: BillItem[] = [
     paid: false,
     note: 'Mensualité RTA (170 000 / 12)',
     icon: 'Landmark',
+    budgetId: 'budget-charges',
   },
   {
     id: 'debt-car',
@@ -168,6 +231,7 @@ export const INITIAL_BILLS: BillItem[] = [
     paid: false,
     note: 'Mensualité crédit véhicule',
     icon: 'Car',
+    budgetId: 'budget-transport',
   },
 ];
 
@@ -178,6 +242,7 @@ export const INITIAL_CURRENT_CYCLE: BudgetCycle = {
   cycleDays: 30,
   salary: 79800,
   bills: INITIAL_BILLS,
+  budgets: DEFAULT_BUDGETS,
   days: generateCycleDays('2026-11-20', 30),
 };
 
@@ -213,10 +278,25 @@ export const INITIAL_HISTORY_CYCLES: BudgetCycle[] = [
     cycleDays: 30,
     salary: 79800,
     bills: INITIAL_BILLS.map((b) => ({ ...b, paid: true })),
+    budgets: DEFAULT_BUDGETS,
     days: prevDays,
     archivedAt: '2026-11-19',
   },
 ];
+
+export interface ComputedBudgetMetrics {
+  id: string;
+  name: string;
+  initialAmount: number;
+  color: string;
+  icon: string;
+  fixedChargesTotal: number;
+  totalAdded: number;
+  totalSubtracted: number;
+  dailySpent: number;
+  balance: number;
+  adjustments: BudgetAdjustment[];
+}
 
 export interface ComputedCycleMetrics {
   salary: number;
@@ -237,6 +317,8 @@ export interface ComputedCycleMetrics {
       isToday: boolean;
     }
   >;
+  budgetMetrics: Record<string, ComputedBudgetMetrics>;
+  budgetList: ComputedBudgetMetrics[];
 }
 
 export function computeCycleMetrics(cycle: BudgetCycle): ComputedCycleMetrics {
@@ -244,11 +326,59 @@ export function computeCycleMetrics(cycle: BudgetCycle): ComputedCycleMetrics {
   const totalFixed = cycle.bills.reduce((acc, b) => acc + b.amount, 0);
   const paidFixed = cycle.bills.filter((b) => b.paid).reduce((acc, b) => acc + b.amount, 0);
 
-  // Budget Food & House calculé automatiquement : Salaire - Total Charges Fixes
+  // Budget global restant après charges fixes
   const foodAndHouseBudget = Math.max(0, cycle.salary - totalFixed);
-  // Budget quotidien : Food & House ÷ 30 jours
+  // Budget quotidien : Total disponible ÷ 30 jours
   const daysCount = cycle.cycleDays > 0 ? cycle.cycleDays : 30;
   const dailyBudget = foodAndHouseBudget / daysCount;
+
+  // Calcul par Budget individuel
+  const budgets = cycle.budgets && cycle.budgets.length > 0 ? cycle.budgets : DEFAULT_BUDGETS;
+  const budgetList: ComputedBudgetMetrics[] = budgets.map((b) => {
+    // 1. Charges fixes affectées à ce budget (automatiquement soustraites)
+    const assignedBills = cycle.bills.filter((bill) => bill.budgetId === b.id);
+    const fixedChargesTotal = assignedBills.reduce((acc, bill) => acc + bill.amount, 0);
+
+    // 2. Ajustements d'argent (+ ajouter, - soustraire)
+    const adjs = b.adjustments || [];
+    const totalAdded = adjs
+      .filter((a) => a.type === 'add')
+      .reduce((acc, a) => acc + a.amount, 0);
+    const totalSubtracted = adjs
+      .filter((a) => a.type === 'subtract')
+      .reduce((acc, a) => acc + a.amount, 0);
+
+    // 3. Dépenses quotidiennes imputées sur ce budget
+    let dailySpent = 0;
+    cycle.days.forEach((day) => {
+      day.entries.forEach((entry) => {
+        if (entry.budgetId === b.id) {
+          dailySpent += entry.amount;
+        }
+      });
+    });
+
+    const balance = b.initialAmount - fixedChargesTotal + totalAdded - totalSubtracted - dailySpent;
+
+    return {
+      id: b.id,
+      name: b.name,
+      initialAmount: b.initialAmount,
+      color: b.color || '#F5B841',
+      icon: b.icon || 'Wallet',
+      fixedChargesTotal,
+      totalAdded,
+      totalSubtracted,
+      dailySpent,
+      balance,
+      adjustments: adjs,
+    };
+  });
+
+  const budgetMetrics: Record<string, ComputedBudgetMetrics> = {};
+  budgetList.forEach((bm) => {
+    budgetMetrics[bm.id] = bm;
+  });
 
   const todayISO = getTodayISO();
   let runningCumulative = 0;
@@ -279,6 +409,8 @@ export function computeCycleMetrics(cycle: BudgetCycle): ComputedCycleMetrics {
     totalSpentDaily,
     remainingFoodAndHouse: foodAndHouseBudget - totalSpentDaily,
     daysWithCumulative,
+    budgetMetrics,
+    budgetList,
   };
 }
 

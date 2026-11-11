@@ -21,10 +21,18 @@ import {
   CheckCircle2,
   Tag,
   Clock,
+  ArrowDownRight,
+  ArrowUpRight,
+  Minus,
+  Layers,
+  PieChart,
 } from 'lucide-react';
 import {
   BudgetCycle,
   BillItem,
+  BudgetItem,
+  BudgetAdjustment,
+  DEFAULT_BUDGETS,
   DEFAULT_PRESET_LABELS,
   INITIAL_CURRENT_CYCLE,
   INITIAL_HISTORY_CYCLES,
@@ -46,7 +54,28 @@ export default function App() {
   const [currentCycle, setCurrentCycle] = useState<BudgetCycle>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_CURRENT);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (!parsed.budgets || parsed.budgets.length === 0) {
+          parsed.budgets = DEFAULT_BUDGETS;
+        }
+        if (parsed.bills) {
+          parsed.bills = parsed.bills.map((b: BillItem) => {
+            if (!b.budgetId) {
+              if (
+                b.name.toLowerCase().includes('essence') ||
+                b.name.toLowerCase().includes('voiture') ||
+                b.name.toLowerCase().includes('car')
+              ) {
+                return { ...b, budgetId: 'budget-transport' };
+              }
+              return { ...b, budgetId: 'budget-charges' };
+            }
+            return b;
+          });
+        }
+        return parsed;
+      }
     } catch {
       // ignore
     }
@@ -98,6 +127,27 @@ export default function App() {
   const [newBillAmount, setNewBillAmount] = useState<string>('');
   const [newBillCategory, setNewBillCategory] = useState<'online' | 'offline_debt'>('online');
   const [newBillNote, setNewBillNote] = useState<string>('');
+  const [newBillBudgetId, setNewBillBudgetId] = useState<string>(() => {
+    return currentCycle.budgets?.[0]?.id || DEFAULT_BUDGETS[0].id;
+  });
+
+  // Multi-Budget State
+  const [selectedBudgetId, setSelectedBudgetId] = useState<string>(() => {
+    return currentCycle.budgets?.[0]?.id || DEFAULT_BUDGETS[0].id;
+  });
+  const [showAddBudgetModal, setShowAddBudgetModal] = useState<boolean>(false);
+  const [newBudgetName, setNewBudgetName] = useState<string>('');
+  const [newBudgetAmount, setNewBudgetAmount] = useState<string>('');
+  const [newBudgetColor, setNewBudgetColor] = useState<string>('#10B981');
+
+  const [showAdjustBudgetModal, setShowAdjustBudgetModal] = useState<boolean>(false);
+  const [adjustBudgetType, setAdjustBudgetType] = useState<'add' | 'subtract'>('add');
+  const [adjustAmount, setAdjustAmount] = useState<string>('');
+  const [adjustNote, setAdjustNote] = useState<string>('');
+
+  const [editingBudgetAmount, setEditingBudgetAmount] = useState<boolean>(false);
+  const [editBudgetAmountInput, setEditBudgetAmountInput] = useState<string>('');
+  const [showBudgetHistory, setShowBudgetHistory] = useState<boolean>(false);
 
   const [showNewCycleModal, setShowNewCycleModal] = useState<boolean>(false);
   const [newCycleLabel, setNewCycleLabel] = useState<string>('Cycle Déc 2026 – Jan 2027 (30J)');
@@ -187,6 +237,7 @@ export default function App() {
           label: finalLabel!,
           amount: rawAmount,
           time: timeStr,
+          budgetId: selectedBudgetId,
         };
         const updatedEntries = [...(d.entries || []), newEntry];
         const totalSpent = updatedEntries.reduce((s, e) => s + e.amount, 0);
@@ -287,6 +338,9 @@ export default function App() {
     const amt = parseFloat(newBillAmount.replace(',', '.'));
     if (!newBillName.trim() || isNaN(amt) || amt <= 0) return;
 
+    const targetBudgetId =
+      newBillBudgetId || currentCycle.budgets?.[0]?.id || DEFAULT_BUDGETS[0].id;
+
     const newItem: BillItem = {
       id: `bill-${Date.now()}`,
       name: newBillName.trim(),
@@ -295,6 +349,7 @@ export default function App() {
       paid: false,
       note: newBillNote.trim() || 'Charge Fixe',
       icon: 'CreditCard',
+      budgetId: targetBudgetId,
     };
 
     setCurrentCycle((prev) => ({
@@ -305,6 +360,122 @@ export default function App() {
     setNewBillAmount('');
     setNewBillNote('');
     setShowAddBillModal(false);
+  };
+
+  // Open Add/Subtract Money Modal
+  const handleOpenAdjustBudget = (type: 'add' | 'subtract') => {
+    setAdjustBudgetType(type);
+    setAdjustAmount('');
+    setAdjustNote('');
+    setShowAdjustBudgetModal(true);
+  };
+
+  // Submit Add/Subtract Money
+  const handleSaveBudgetAdjustment = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(adjustAmount.replace(',', '.'));
+    if (isNaN(amt) || amt <= 0) return;
+
+    const newAdj: BudgetAdjustment = {
+      id: `adj-${Date.now()}`,
+      type: adjustBudgetType,
+      amount: amt,
+      dateISO: selectedDay.dateISO,
+      note:
+        adjustNote.trim() ||
+        (adjustBudgetType === 'add' ? 'Réapprovisionnement' : 'Dépense / Retrait'),
+      createdAt: new Date().toLocaleTimeString('fr-FR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+    };
+
+    setCurrentCycle((prev) => {
+      const budgets = (prev.budgets && prev.budgets.length > 0
+        ? prev.budgets
+        : DEFAULT_BUDGETS
+      ).map((b) => {
+        if (b.id !== selectedBudgetId) return b;
+        return {
+          ...b,
+          adjustments: [...(b.adjustments || []), newAdj],
+        };
+      });
+      return { ...prev, budgets };
+    });
+
+    setShowAdjustBudgetModal(false);
+  };
+
+  // Delete an adjustment
+  const handleDeleteBudgetAdjustment = (budgetId: string, adjId: string) => {
+    setCurrentCycle((prev) => {
+      const budgets = (prev.budgets || DEFAULT_BUDGETS).map((b) => {
+        if (b.id !== budgetId) return b;
+        return {
+          ...b,
+          adjustments: (b.adjustments || []).filter((a) => a.id !== adjId),
+        };
+      });
+      return { ...prev, budgets };
+    });
+  };
+
+  // Create new budget
+  const handleCreateBudget = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(newBudgetAmount.replace(',', '.'));
+    if (!newBudgetName.trim() || isNaN(amt) || amt < 0) return;
+
+    const newBudget: BudgetItem = {
+      id: `budget-${Date.now()}`,
+      name: newBudgetName.trim(),
+      initialAmount: amt,
+      color: newBudgetColor || '#10B981',
+      icon: 'Wallet',
+      adjustments: [],
+    };
+
+    setCurrentCycle((prev) => ({
+      ...prev,
+      budgets: [...(prev.budgets || DEFAULT_BUDGETS), newBudget],
+    }));
+
+    setSelectedBudgetId(newBudget.id);
+    setNewBudgetName('');
+    setNewBudgetAmount('');
+    setShowAddBudgetModal(false);
+  };
+
+  // Edit budget initial amount
+  const handleSaveBudgetInitialAmount = () => {
+    const amt = parseFloat(editBudgetAmountInput.replace(',', '.'));
+    if (!isNaN(amt) && amt >= 0) {
+      setCurrentCycle((prev) => {
+        const budgets = (prev.budgets || DEFAULT_BUDGETS).map((b) => {
+          if (b.id !== selectedBudgetId) return b;
+          return { ...b, initialAmount: amt };
+        });
+        return { ...prev, budgets };
+      });
+    }
+    setEditingBudgetAmount(false);
+  };
+
+  // Delete budget
+  const handleDeleteBudget = (budgetId: string) => {
+    const currentList = currentCycle.budgets || DEFAULT_BUDGETS;
+    if (currentList.length <= 1) return;
+
+    setCurrentCycle((prev) => {
+      const filtered = (prev.budgets || DEFAULT_BUDGETS).filter((b) => b.id !== budgetId);
+      return { ...prev, budgets: filtered };
+    });
+
+    if (selectedBudgetId === budgetId) {
+      const remaining = currentList.filter((b) => b.id !== budgetId);
+      if (remaining.length > 0) setSelectedBudgetId(remaining[0].id);
+    }
   };
 
   const handleSaveSalary = () => {
@@ -334,6 +505,10 @@ export default function App() {
       cycleDays: 30,
       salary: currentCycle.salary,
       bills: currentCycle.bills.map((b) => ({ ...b, paid: false })),
+      budgets: (currentCycle.budgets || DEFAULT_BUDGETS).map((b) => ({
+        ...b,
+        adjustments: [],
+      })),
       days: generateCycleDays(newCycleStartDate, 30),
     };
 
@@ -389,6 +564,22 @@ export default function App() {
     metrics.totalOnline > 0
       ? Math.min(100, Math.round((metrics.paidOnline / metrics.totalOnline) * 100))
       : 0;
+
+  const activeBudget =
+    metrics.budgetMetrics?.[selectedBudgetId] ||
+    metrics.budgetList?.[0] || {
+      id: 'budget-food',
+      name: 'Alimentation & Courses',
+      initialAmount: 40000,
+      color: '#10B981',
+      icon: 'Utensils',
+      fixedChargesTotal: 0,
+      totalAdded: 0,
+      totalSubtracted: 0,
+      dailySpent: 0,
+      balance: 40000,
+      adjustments: [],
+    };
 
   return (
     <div className="app-shell">
@@ -494,52 +685,6 @@ export default function App() {
                 </span>
               </div>
 
-              {/* Food & House (Calculé auto) — Affiché uniquement sur la première page */}
-              <div
-                style={{
-                  background: 'rgba(16, 185, 129, 0.08)',
-                  border: '1px solid rgba(16, 185, 129, 0.22)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '9px 12px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: 10,
-                }}
-              >
-                <div>
-                  <div
-                    style={{
-                      fontSize: '0.68rem',
-                      color: '#10B981',
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.04em',
-                    }}
-                  >
-                    Food & House (Calculé auto)
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                    Salaire − Charges Fixes (30J)
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div
-                    style={{
-                      fontFamily: 'var(--font-mono)',
-                      fontWeight: 700,
-                      color: '#10B981',
-                      fontSize: '0.95rem',
-                    }}
-                  >
-                    {formatDA(metrics.foodAndHouseBudget, 0)}
-                  </div>
-                  <div style={{ fontSize: '0.70rem', color: 'var(--text-muted)' }}>
-                    soit {formatDA(metrics.dailyBudget, 0)} / jour
-                  </div>
-                </div>
-              </div>
-
               <div className="vault-metrics-grid">
                 <div className="vault-mini-stat">
                   <div className="vault-mini-label">Budget / Jour (30J)</div>
@@ -548,13 +693,13 @@ export default function App() {
                   </div>
                 </div>
                 <div className="vault-mini-stat">
-                  <div className="vault-mini-label">Dépensé (30j)</div>
+                  <div className="vault-mini-label">Dépensé Total (30j)</div>
                   <div className="vault-mini-val" style={{ color: '#F8FAFC' }}>
                     {formatDA(metrics.totalSpentDaily, 0)}
                   </div>
                 </div>
                 <div className="vault-mini-stat">
-                  <div className="vault-mini-label">Reste Food&House</div>
+                  <div className="vault-mini-label">Reste Global (30J)</div>
                   <div
                     className="vault-mini-val"
                     style={{
@@ -567,6 +712,363 @@ export default function App() {
               </div>
             </section>
 
+            {/* Multi-Budget Management Section */}
+            <section className="section-card" style={{ marginTop: 14 }}>
+              <div className="section-header" style={{ marginBottom: 10 }}>
+                <div className="section-title">
+                  <Layers size={17} color="#F5B841" />
+                  Gestion des Budgets
+                </div>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ padding: '5px 10px', fontSize: '0.74rem', gap: 4 }}
+                  onClick={() => setShowAddBudgetModal(true)}
+                >
+                  <Plus size={13} /> Nouveau Budget
+                </button>
+              </div>
+
+              {/* Horizontal Scrollable Budget Pills */}
+              <div className="budget-pills-container">
+                {metrics.budgetList.map((b) => {
+                  const isSelected = b.id === activeBudget.id;
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      className={`budget-pill ${isSelected ? 'active' : ''}`}
+                      onClick={() => setSelectedBudgetId(b.id)}
+                      style={{
+                        borderColor: isSelected ? b.color : undefined,
+                        boxShadow: isSelected ? `0 0 10px ${b.color}25` : undefined,
+                      }}
+                    >
+                      <span
+                        className="budget-pill-dot"
+                        style={{ background: b.color }}
+                      />
+                      <span>{b.name}</span>
+                      <span
+                        style={{
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: '0.72rem',
+                          color: b.balance >= 0 ? '#10B981' : '#F43F5E',
+                          fontWeight: 700,
+                          marginLeft: 2,
+                        }}
+                      >
+                        {formatDA(b.balance, 0)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Selected Active Budget Card */}
+              <div className="budget-active-card">
+                <div className="budget-header-row">
+                  <div className="budget-title-group">
+                    <div
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: '50%',
+                        background: activeBudget.color,
+                      }}
+                    />
+                    <strong style={{ fontSize: '0.92rem', color: '#FFF' }}>
+                      {activeBudget.name}
+                    </strong>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {editingBudgetAmount ? (
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <input
+                          type="number"
+                          className="input-field mono"
+                          style={{ width: 85, padding: '3px 6px', fontSize: '0.75rem' }}
+                          value={editBudgetAmountInput}
+                          onChange={(e) => setEditBudgetAmountInput(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          style={{ padding: '3px 7px', fontSize: '0.72rem' }}
+                          onClick={handleSaveBudgetInitialAmount}
+                        >
+                          OK
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditBudgetAmountInput(String(activeBudget.initialAmount));
+                          setEditingBudgetAmount(true);
+                        }}
+                        style={{
+                          background: 'rgba(255,255,255,0.06)',
+                          border: 'none',
+                          borderRadius: 6,
+                          color: 'var(--text-secondary)',
+                          cursor: 'pointer',
+                          padding: '3px 7px',
+                          fontSize: '0.72rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 3,
+                        }}
+                        title="Modifier le montant initial alloué"
+                      >
+                        <Edit3 size={11} />
+                        Initial: {formatDA(activeBudget.initialAmount, 0)}
+                      </button>
+                    )}
+
+                    {metrics.budgetList.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteBudget(activeBudget.id)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          padding: 3,
+                        }}
+                        title="Supprimer ce budget"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Big Balance Display */}
+                <div
+                  style={{
+                    background: 'rgba(11, 15, 23, 0.65)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '12px 14px',
+                    border: '1px solid var(--border-subtle)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 10,
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: '0.70rem',
+                        color: 'var(--text-secondary)',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      Solde Restant Disponible
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                      Après charges fixes & dépenses
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '1.25rem',
+                      fontWeight: 800,
+                      color: activeBudget.balance >= 0 ? '#10B981' : '#F43F5E',
+                    }}
+                  >
+                    {activeBudget.balance >= 0 ? '+' : ''}
+                    {formatDA(activeBudget.balance, 0)}
+                  </div>
+                </div>
+
+                {/* Breakdown Mini-Grid */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(4, 1fr)',
+                    gap: 6,
+                    fontSize: '0.72rem',
+                  }}
+                >
+                  <div className="vault-mini-stat" style={{ padding: '6px 8px' }}>
+                    <div className="vault-mini-label" style={{ fontSize: '0.64rem' }}>
+                      Alloué initial
+                    </div>
+                    <div className="vault-mini-val" style={{ fontSize: '0.78rem' }}>
+                      {formatDA(activeBudget.initialAmount, 0)}
+                    </div>
+                  </div>
+
+                  <div className="vault-mini-stat" style={{ padding: '6px 8px' }}>
+                    <div className="vault-mini-label" style={{ fontSize: '0.64rem' }}>
+                      Charges Fixes
+                    </div>
+                    <div
+                      className="vault-mini-val"
+                      style={{ fontSize: '0.78rem', color: 'var(--coral)' }}
+                    >
+                      − {formatDA(activeBudget.fixedChargesTotal, 0)}
+                    </div>
+                  </div>
+
+                  <div className="vault-mini-stat" style={{ padding: '6px 8px' }}>
+                    <div className="vault-mini-label" style={{ fontSize: '0.64rem' }}>
+                      Opérations (+ / −)
+                    </div>
+                    <div
+                      className="vault-mini-val"
+                      style={{
+                        fontSize: '0.78rem',
+                        color:
+                          activeBudget.totalAdded >= activeBudget.totalSubtracted
+                            ? '#10B981'
+                            : 'var(--coral)',
+                      }}
+                    >
+                      {activeBudget.totalAdded > 0
+                        ? `+${formatDA(activeBudget.totalAdded, 0)} `
+                        : ''}
+                      {activeBudget.totalSubtracted > 0
+                        ? `−${formatDA(activeBudget.totalSubtracted, 0)}`
+                        : activeBudget.totalAdded === 0
+                        ? '0 DA'
+                        : ''}
+                    </div>
+                  </div>
+
+                  <div className="vault-mini-stat" style={{ padding: '6px 8px' }}>
+                    <div className="vault-mini-label" style={{ fontSize: '0.64rem' }}>
+                      Dépenses 30j
+                    </div>
+                    <div
+                      className="vault-mini-val"
+                      style={{ fontSize: '0.78rem', color: 'var(--gold-primary)' }}
+                    >
+                      − {formatDA(activeBudget.dailySpent, 0)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* The 2 Direct Operations Buttons */}
+                <div className="budget-actions-row">
+                  <button
+                    type="button"
+                    className="btn-budget-action add"
+                    onClick={() => handleOpenAdjustBudget('add')}
+                  >
+                    <Plus size={16} />
+                    Ajouter de l'argent
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn-budget-action subtract"
+                    onClick={() => handleOpenAdjustBudget('subtract')}
+                  >
+                    <Minus size={16} />
+                    Soustraire de l'argent
+                  </button>
+                </div>
+
+                {/* Operations History Toggle & List */}
+                {activeBudget.adjustments && activeBudget.adjustments.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowBudgetHistory(!showBudgetHistory)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--text-secondary)',
+                        fontSize: '0.72rem',
+                        cursor: 'pointer',
+                        padding: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <span>
+                        {showBudgetHistory ? 'Masquer' : 'Afficher'} l'historique des opérations (
+                        {activeBudget.adjustments.length})
+                      </span>
+                    </button>
+
+                    {showBudgetHistory && (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 5,
+                          maxHeight: 140,
+                          overflowY: 'auto',
+                          paddingRight: 4,
+                        }}
+                      >
+                        {activeBudget.adjustments.map((adj) => (
+                          <div
+                            key={adj.id}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              background: 'rgba(11, 15, 23, 0.45)',
+                              padding: '5px 8px',
+                              borderRadius: 6,
+                              fontSize: '0.72rem',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span
+                                style={{
+                                  color: adj.type === 'add' ? '#10B981' : '#F43F5E',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {adj.type === 'add' ? '+ ' : '− '}
+                                {formatDA(adj.amount, 0)}
+                              </span>
+                              <span style={{ color: 'var(--text-secondary)' }}>
+                                {adj.note}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ color: 'var(--text-muted)', fontSize: '0.67rem' }}>
+                                {adj.dateISO.slice(5)} {adj.createdAt}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleDeleteBudgetAdjustment(activeBudget.id, adj.id)
+                                }
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: 'var(--text-muted)',
+                                  cursor: 'pointer',
+                                  padding: 2,
+                                }}
+                                title="Supprimer cet ajustement"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
+
             {/* Quick Expense Entry for Selected Day */}
             <section className="section-card">
               <div className="section-header">
@@ -574,6 +1076,19 @@ export default function App() {
                   <Plus size={17} color="#F5B841" />
                   Saisie Dépense — {selectedDay.weekday} {selectedDay.dateLabel}
                   {selectedDay.isToday && <span className="today-pill">Aujourd'hui</span>}
+                  <span
+                    style={{
+                      fontSize: '0.68rem',
+                      padding: '2px 7px',
+                      borderRadius: 999,
+                      background: `${activeBudget.color}20`,
+                      color: activeBudget.color,
+                      fontWeight: 700,
+                      marginLeft: 4,
+                    }}
+                  >
+                    ↳ {activeBudget.name}
+                  </span>
                 </div>
                 <span
                   className={`badge-tag ${
@@ -1087,7 +1602,28 @@ export default function App() {
                         <Check size={15} strokeWidth={3} />
                       </button>
                       <div className="bill-info">
-                        <div className="bill-name">{bill.name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span className="bill-name">{bill.name}</span>
+                          {(() => {
+                            const bObj = (currentCycle.budgets || DEFAULT_BUDGETS).find(
+                              (b) => b.id === bill.budgetId
+                            );
+                            return (
+                              <span
+                                style={{
+                                  fontSize: '0.64rem',
+                                  padding: '1px 6px',
+                                  borderRadius: 4,
+                                  background: bObj ? `${bObj.color}22` : 'rgba(255,255,255,0.06)',
+                                  color: bObj ? bObj.color : 'var(--text-muted)',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {bObj ? bObj.name : 'Budget'}
+                              </span>
+                            );
+                          })()}
+                        </div>
                         <div className="bill-note">
                           {bill.paid ? '✓ Réglé' : bill.note || 'En attente de règlement'}
                         </div>
@@ -1539,6 +2075,30 @@ export default function App() {
               required
             />
 
+            <div>
+              <label
+                style={{
+                  fontSize: '0.74rem',
+                  color: 'var(--text-secondary)',
+                  display: 'block',
+                  marginBottom: 4,
+                }}
+              >
+                Affecter au budget :
+              </label>
+              <select
+                className="input-field"
+                value={newBillBudgetId}
+                onChange={(e) => setNewBillBudgetId(e.target.value)}
+              >
+                {(currentCycle.budgets || DEFAULT_BUDGETS).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <input
               type="text"
               className="input-field"
@@ -1557,6 +2117,209 @@ export default function App() {
               </button>
               <button type="submit" className="btn-primary">
                 Enregistrer
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal: Add New Budget */}
+      {showAddBudgetModal && (
+        <div className="modal-backdrop" onClick={() => setShowAddBudgetModal(false)}>
+          <form
+            className="modal-sheet"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={handleCreateBudget}
+          >
+            <div className="section-title">
+              <Plus size={18} color="#F5B841" />
+              Créer un Nouveau Budget
+            </div>
+
+            <input
+              type="text"
+              className="input-field"
+              placeholder="Nom du budget (ex: Alimentation, Loisirs...)"
+              value={newBudgetName}
+              onChange={(e) => setNewBudgetName(e.target.value)}
+              required
+            />
+
+            <div>
+              <label
+                style={{
+                  fontSize: '0.74rem',
+                  color: 'var(--text-secondary)',
+                  display: 'block',
+                  marginBottom: 4,
+                }}
+              >
+                Montant alloué de départ (DA) :
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                className="input-field mono"
+                placeholder="ex: 30000"
+                value={newBudgetAmount}
+                onChange={(e) => setNewBudgetAmount(e.target.value)}
+                required
+              />
+            </div>
+
+            <div>
+              <label
+                style={{
+                  fontSize: '0.74rem',
+                  color: 'var(--text-secondary)',
+                  display: 'block',
+                  marginBottom: 4,
+                }}
+              >
+                Couleur d'identification :
+              </label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {['#10B981', '#3B82F6', '#F5B841', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316'].map(
+                  (col) => (
+                    <button
+                      key={col}
+                      type="button"
+                      onClick={() => setNewBudgetColor(col)}
+                      style={{
+                        width: 26,
+                        height: 26,
+                        borderRadius: '50%',
+                        background: col,
+                        border:
+                          newBudgetColor === col
+                            ? '3px solid #FFF'
+                            : '1px solid rgba(255,255,255,0.2)',
+                        cursor: 'pointer',
+                        transform: newBudgetColor === col ? 'scale(1.15)' : 'none',
+                        transition: 'transform 0.15s ease',
+                      }}
+                    />
+                  )
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 6 }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setShowAddBudgetModal(false)}
+              >
+                Annuler
+              </button>
+              <button type="submit" className="btn-primary">
+                Créer le budget
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal: Adjust Budget (Ajouter ou Soustraire de l'argent) */}
+      {showAdjustBudgetModal && (
+        <div className="modal-backdrop" onClick={() => setShowAdjustBudgetModal(false)}>
+          <form
+            className="modal-sheet"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={handleSaveBudgetAdjustment}
+          >
+            <div className="section-title">
+              {adjustBudgetType === 'add' ? (
+                <Plus size={18} color="#10B981" />
+              ) : (
+                <Minus size={18} color="#F43F5E" />
+              )}
+              {adjustBudgetType === 'add' ? "Ajouter de l'argent" : "Soustraire de l'argent"}
+              <span
+                style={{
+                  fontSize: '0.72rem',
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  background: 'rgba(255,255,255,0.08)',
+                  color: activeBudget.color,
+                  fontWeight: 600,
+                  marginLeft: 6,
+                }}
+              >
+                {activeBudget.name}
+              </span>
+            </div>
+
+            <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+              {adjustBudgetType === 'add'
+                ? "Réapprovisionnement exceptionnel ou apport d'argent sur ce budget."
+                : 'Dépense ou retrait exceptionnel à imputer directement sur ce budget.'}
+            </p>
+
+            <div>
+              <label
+                style={{
+                  fontSize: '0.74rem',
+                  color: 'var(--text-secondary)',
+                  display: 'block',
+                  marginBottom: 4,
+                }}
+              >
+                Montant en Dinars (DA) :
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                className="input-field mono"
+                placeholder="Montant en DA"
+                value={adjustAmount}
+                onChange={(e) => setAdjustAmount(e.target.value)}
+                autoFocus
+                required
+              />
+            </div>
+
+            <div>
+              <label
+                style={{
+                  fontSize: '0.74rem',
+                  color: 'var(--text-secondary)',
+                  display: 'block',
+                  marginBottom: 4,
+                }}
+              >
+                Motif / Note :
+              </label>
+              <input
+                type="text"
+                className="input-field"
+                placeholder={
+                  adjustBudgetType === 'add'
+                    ? "ex: Rentrée d'argent, prime, virement..."
+                    : 'ex: Retrait exceptionnel, achat imprévu...'
+                }
+                value={adjustNote}
+                onChange={(e) => setAdjustNote(e.target.value)}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 6 }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setShowAdjustBudgetModal(false)}
+              >
+                Annuler
+              </button>
+              <button
+                type="submit"
+                className="btn-primary"
+                style={{
+                  background: adjustBudgetType === 'add' ? '#10B981' : '#F43F5E',
+                  borderColor: adjustBudgetType === 'add' ? '#10B981' : '#F43F5E',
+                }}
+              >
+                {adjustBudgetType === 'add' ? "+ Confirmer l'ajout" : '− Confirmer le retrait'}
               </button>
             </div>
           </form>
